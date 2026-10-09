@@ -88,6 +88,52 @@ jobs:
           print(f"PASS: placeholder parity for {checked} localized strings")
           PY
 
+      - name: Disable Crashlytics symbol upload for community build
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          path = Path("source/Sapphire.xcodeproj/project.pbxproj")
+          text = path.read_text(encoding="utf-8")
+          phase_id = "DAC019182E9EA03E00CA587F"
+          marker = f"{phase_id} /* Upload Crashlytics Symbols */ = {{"
+          marker_index = text.find(marker)
+          if marker_index < 0:
+              raise SystemExit("Crashlytics upload phase was not found")
+
+          block_start = text.rfind("\n", 0, marker_index) + 1
+          block_end = text.find("\n\t\t};", marker_index)
+          if block_end < 0:
+              raise SystemExit("Crashlytics upload phase is malformed")
+          block_end += len("\n\t\t};")
+          block = text[block_start:block_end]
+          if block.count("shellScript =") != 1:
+              raise SystemExit("expected exactly one Crashlytics shell script")
+
+          replacement = (
+              r'\1shellScript = "echo Skipping Crashlytics symbol upload '
+              r'in community build\\n";'
+          )
+          updated_block, count = re.subn(
+              r'(?m)^(\s*)shellScript = .*;$',
+              replacement,
+              block,
+              count=1,
+          )
+          if count != 1:
+              raise SystemExit("could not replace Crashlytics shell script")
+
+          path.write_text(
+              text[:block_start] + updated_block + text[block_end:],
+              encoding="utf-8",
+          )
+          print("Skipping Crashlytics symbol upload in community build")
+          PY
+          git -C source diff --check
+
       - name: Build unsigned arm64 Release application
         shell: bash
         working-directory: source
