@@ -118,8 +118,8 @@ jobs:
               r'in community build\\n";'
           )
           updated_block, count = re.subn(
-              r'(?m)^(\s*)shellScript = .*;$',
-              replacement,
+              r'(?ms)^([ \t]*)shellScript = .*?;\n',
+              replacement + "\n",
               block,
               count=1,
           )
