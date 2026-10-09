@@ -34,7 +34,7 @@ jobs:
               'print("[GeminiLiveManager] Connection error: \\(error)")':
                   'print("[GeminiLiveManager] Connection error: \\(message)")',
               'print("[GeminiLiveManager] API key not configured")':
-                  'print("[GeminiLiveManager] \\(lastError ?? \\"API key not configured\\")")',
+                  'print("[GeminiLiveManager] \\(lastError ?? "API key not configured")")',
           }
           for old, new in replacements.items():
               if text.count(old) != 1:
