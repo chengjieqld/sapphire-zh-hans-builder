@@ -104,6 +104,7 @@ jobs:
             -skipMacroValidation \
             ARCHS=arm64 \
             ONLY_ACTIVE_ARCH=YES \
+            EXCLUDED_SOURCE_FILE_NAMES=GeminiLiveManagerStub.swift \
             CODE_SIGNING_ALLOWED=NO \
             build | tee "$RUNNER_TEMP/xcodebuild.log"
 
