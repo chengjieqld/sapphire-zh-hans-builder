@@ -1,1 +1,76 @@
-Patch uploaded in next commit.
+diff --git a/Sapphire/App/FirebaseBootstrap.swift b/Sapphire/App/FirebaseBootstrap.swift
+index 0ca295d..4bc2b18 100644
+--- a/Sapphire/App/FirebaseBootstrap.swift
++++ b/Sapphire/App/FirebaseBootstrap.swift
+@@ -13,6 +13,9 @@ enum FirebaseBootstrap {
+ 
+     static func configureIfNeeded() {
+         guard !isConfigured else { return }
++        guard FirebaseConfigurationPolicy.canConfigureFirebase(
++            optionsAt: Bundle.main.url(forResource: "GoogleService-Info", withExtension: "plist")
++        ) else { return }
+         #if DEBUG
+         AppCheck.setAppCheckProviderFactory(AppCheckDebugProviderFactory())
+         #else
+@@ -21,4 +24,4 @@ enum FirebaseBootstrap {
+         FirebaseApp.configure()
+         isConfigured = true
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Sapphire/App/SapphireAnalytics.swift b/Sapphire/App/SapphireAnalytics.swift
+index aa31cc6..6a5365f 100755
+--- a/Sapphire/App/SapphireAnalytics.swift
++++ b/Sapphire/App/SapphireAnalytics.swift
+@@ -33,6 +33,7 @@ enum SapphireAnalytics {
+         if !FirebaseBootstrap.isConfigured {
+             bootstrap()
+         }
++        guard FirebaseBootstrap.isConfigured else { return }
+         Analytics.logEvent(name, parameters: parameters)
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Sapphire/Services/Music/LyricsDatabase.swift b/Sapphire/Services/Music/LyricsDatabase.swift
+index a6fa434..a233d78 100644
+--- a/Sapphire/Services/Music/LyricsDatabase.swift
++++ b/Sapphire/Services/Music/LyricsDatabase.swift
+@@ -26,6 +26,7 @@ final class LyricsDatabase {
+         if let cached = cache[cacheKey] { return cached }
+ 
+         FirebaseBootstrap.configureIfNeeded()
++        guard FirebaseBootstrap.isConfigured else { return nil }
+         let started = Date()
+         switch await Self.lookup(keys: keys) {
+         case .found(let lines, let source, let keyType):
+@@ -136,4 +137,4 @@ enum LyricsDatabaseDocument {
+         default: return nil
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Sapphire/Utilities/FirebaseConfigurationPolicy.swift b/Sapphire/Utilities/FirebaseConfigurationPolicy.swift
+new file mode 100644
+index 0000000..4e336e2
+--- /dev/null
++++ b/Sapphire/Utilities/FirebaseConfigurationPolicy.swift
+@@ -0,0 +1,16 @@
++import Foundation
++
++enum FirebaseConfigurationPolicy {
++    static func canConfigureFirebase(optionsAt url: URL?) -> Bool {
++        guard let url,
++              let data = try? Data(contentsOf: url),
++              let options = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any],
++              let apiKey = options["API_KEY"] as? String,
++              !apiKey.isEmpty,
++              let appID = options["GOOGLE_APP_ID"] as? String,
++              !appID.isEmpty else {
++            return false
++        }
++        return true
++    }
++}
