@@ -13,6 +13,11 @@ jobs:
     timeout-minutes: 90
 
     steps:
+      - name: Check out community build kit
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+
       - name: Check out pinned audited localization source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -20,6 +25,19 @@ jobs:
           ref: 4218693c8bdbb52cd2bbddd3d27e9e14ede00d6a
           path: source
           persist-credentials: false
+
+      - name: Prevent Firebase startup failure with public placeholder
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C source apply --check ../patches/public-firebase-startup.patch
+          git -C source apply ../patches/public-firebase-startup.patch
+          swiftc -parse-as-library \
+            source/Sapphire/Utilities/FirebaseConfigurationPolicy.swift \
+            scripts/FirebaseConfigurationPolicyTests.swift \
+            -o "$RUNNER_TEMP/firebase-policy-test"
+          "$RUNNER_TEMP/firebase-policy-test" source/Sapphire/Stubs/GoogleService-Info.plist
+          git -C source diff --check
 
       - name: Restore reviewed Gemini logging behavior
         shell: bash
