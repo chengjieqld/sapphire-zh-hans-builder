@@ -1,0 +1,131 @@
+name: Build Sapphire zh-Hans
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build arm64 application
+    runs-on: macos-26
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out pinned audited localization source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: 978655242/Sapphire
+          ref: 4218693c8bdbb52cd2bbddd3d27e9e14ede00d6a
+          path: source
+          persist-credentials: false
+
+      - name: Restore reviewed Gemini logging behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("source/Sapphire/Services/Gemini/GeminiLiveManager.swift")
+          text = path.read_text(encoding="utf-8")
+          replacements = {
+              'print("[GeminiLiveManager] Connection error: \\(error)")':
+                  'print("[GeminiLiveManager] Connection error: \\(message)")',
+              'print("[GeminiLiveManager] API key not configured")':
+                  'print("[GeminiLiveManager] \\(lastError ?? \\"API key not configured\\")")',
+          }
+          for old, new in replacements.items():
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one reviewed logging edit: {old}")
+              text = text.replace(old, new)
+          path.write_text(text, encoding="utf-8")
+          PY
+          git -C source diff --check
+
+      - name: Validate localization resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m json.tool source/Sapphire/Localizable.xcstrings >/dev/null
+          python3 -m json.tool source/Sapphire/InfoPlist.xcstrings >/dev/null
+          python3 -m json.tool source/SapphireAndroidWidgets/Localizable.xcstrings >/dev/null
+          python3 -m json.tool source/SapphireAndroidWidgets/InfoPlist.xcstrings >/dev/null
+          plutil -lint source/Sapphire/App/zh-Hans.lproj/Main.strings
+          python3 - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          placeholder = re.compile(
+              r"%(?:\d+\$)?[-+#0']*(?:\d+|\*)?(?:\.\d+|\.\*)?"
+              r"(?:hh|h|ll|l|q|L|z|t|j)?[@diuoxXfFeEgGaAcCsSp%]"
+          )
+          paths = [
+              Path("source/Sapphire/Localizable.xcstrings"),
+              Path("source/Sapphire/InfoPlist.xcstrings"),
+              Path("source/SapphireAndroidWidgets/Localizable.xcstrings"),
+              Path("source/SapphireAndroidWidgets/InfoPlist.xcstrings"),
+          ]
+          checked = 0
+          for path in paths:
+              catalog = json.loads(path.read_text(encoding="utf-8"))
+              for key, entry in catalog.get("strings", {}).items():
+                  units = entry.get("localizations", {})
+                  en = units.get("en", {}).get("stringUnit", {}).get("value")
+                  zh = units.get("zh-Hans", {}).get("stringUnit", {}).get("value")
+                  if en is None or zh is None:
+                      raise SystemExit(f"{path}: missing en/zh-Hans value for {key!r}")
+                  tokens = lambda value: sorted(
+                      re.sub(r"^%(?:\d+\$)", "%", token)
+                      for token in placeholder.findall(value)
+                      if token != "%%"
+                  )
+                  if tokens(en) != tokens(zh):
+                      raise SystemExit(f"{path}: placeholder mismatch for {key!r}")
+                  checked += 1
+          print(f"PASS: placeholder parity for {checked} localized strings")
+          PY
+
+      - name: Build unsigned arm64 Release application
+        shell: bash
+        working-directory: source
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project Sapphire.xcodeproj \
+            -scheme Sapphire \
+            -configuration Release \
+            -destination 'generic/platform=macOS' \
+            -derivedDataPath "$RUNNER_TEMP/SapphireDerivedData" \
+            -clonedSourcePackagesDirPath "$RUNNER_TEMP/SourcePackages" \
+            -skipPackagePluginValidation \
+            -skipMacroValidation \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      - name: Ad-hoc sign, verify, and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="$RUNNER_TEMP/SapphireDerivedData/Build/Products/Release/Sapphire.app"
+          test -d "$app"
+          codesign --force --deep --sign - --timestamp=none "$app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          test "$(defaults read "$app/Contents/Info.plist" CFBundleExecutable)" = 'Sapphire'
+
+          mkdir -p dist
+          ditto -c -k --sequesterRsrc --keepParent "$app" dist/Sapphire-zh-Hans-arm64.zip
+          shasum -a 256 dist/Sapphire-zh-Hans-arm64.zip > dist/SHA256SUMS.txt
+          cp "$RUNNER_TEMP/xcodebuild.log" dist/xcodebuild.log
+
+      - name: Upload downloadable build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Sapphire-zh-Hans-arm64
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
