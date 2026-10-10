@@ -1,5 +1,6 @@
 diff --git a/Sapphire/App/CommunityHelperPolicy.swift b/Sapphire/App/CommunityHelperPolicy.swift
 new file mode 100644
+index 0000000..fae8929
 --- /dev/null
 +++ b/Sapphire/App/CommunityHelperPolicy.swift
 @@ -0,0 +1,6 @@
@@ -8,6 +9,41 @@ new file mode 100644
 +// supplied only by the community build patch, not upstream Sapphire.
 +enum CommunityHelperPolicy {
 +    static let allowsPrivilegedHelper = false
++}
+diff --git a/Sapphire/App Settings/SettingsPanes.swift b/Sapphire/App Settings/SettingsPanes.swift
+index 7923d67..143edf1 100755
+--- a/Sapphire/App Settings/SettingsPanes.swift	
++++ b/Sapphire/App Settings/SettingsPanes.swift	
+@@ -8044,14 +8044,16 @@ struct BatteryConfigurationView: View {
+                 .onAppear { helperManager.checkIfRunning() }
+ 
+                 notificationsSection
+-                coreFeaturesSection
+-                chargingAndSleepSection
+-                automaticDischargeSection
+-                OneTimeDischargeView()
+-                schedulingSection
+-                CalibrationView()
++                if CommunityHelperPolicy.allowsPrivilegedHelper {
++                    coreFeaturesSection
++                    chargingAndSleepSection
++                    automaticDischargeSection
++                    OneTimeDischargeView()
++                    schedulingSection
++                    CalibrationView()
++                    FanControlSectionView()
++                }
+                 advancedSection
+-                FanControlSectionView()
+             }
+             .padding(.horizontal, 25).padding(.bottom, 25)
+         }
+@@ -13268,4 +13270,4 @@ private struct AddFocusScheduleView: View {
+         }        .buttonStyle(.plain)
+         .help(token.label)
+     }
+-}
+\ No newline at end of file
 +}
 diff --git a/Sapphire/App/HelperManager.swift b/Sapphire/App/HelperManager.swift
 index da3bb43..c0ed499 100755
@@ -133,14 +169,58 @@ index 6704518..9a47b91 100755
 -}
 \ No newline at end of file
 +}
+diff --git a/Sapphire/App/XPCClient.swift b/Sapphire/App/XPCClient.swift
+index ed2fd9a..ef07305 100755
+--- a/Sapphire/App/XPCClient.swift
++++ b/Sapphire/App/XPCClient.swift
+@@ -19,6 +19,7 @@ final class XPCClient {
+     private init() {}
+ 
+     func proxy(onError: ((Error) -> Void)? = nil) -> HelperProtocol? {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return nil }
+         start()
+ 
+         lock.lock()
+@@ -39,6 +40,7 @@ final class XPCClient {
+     }
+ 
+     func start(force: Bool = false) {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return }
+         var oldConnection: NSXPCConnection?
+         var newConnection: NSXPCConnection?
+ 
+@@ -231,4 +233,4 @@ final class XPCClient {
+         detach(failedConnection, notifyLost: true)
+         failedConnection.invalidate()
+     }
+-}
+\ No newline at end of file
++}
 diff --git a/Sapphire/Localizable.xcstrings b/Sapphire/Localizable.xcstrings
-index ae00af4..b393f5d 100644
+index ae00af4..0b51121 100644
 --- a/Sapphire/Localizable.xcstrings
 +++ b/Sapphire/Localizable.xcstrings
-@@ -40988,6 +40988,23 @@
+@@ -40988,6 +40988,40 @@
          }
        }
      },
++    "Charge controls unavailable": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Charge controls unavailable"
++          }
++        },
++        "zh-Hans": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "充电控制不可用"
++          }
++        }
++      }
++    },
 +    "Privileged helper is unavailable in this ad-hoc build; battery controls and related integrations are disabled.": {
 +      "extractionState": "manual",
 +      "localizations": {
@@ -161,6 +241,25 @@ index ae00af4..b393f5d 100644
      "Privileged helper is running.": {
        "extractionState": "manual",
        "localizations": {
+diff --git a/Sapphire/Services/Battery/BatteryManager.swift b/Sapphire/Services/Battery/BatteryManager.swift
+index 3852625..4449aa5 100755
+--- a/Sapphire/Services/Battery/BatteryManager.swift
++++ b/Sapphire/Services/Battery/BatteryManager.swift
+@@ -448,6 +448,7 @@ class BatteryManager {
+     }
+ 
+     func getHelper() -> HelperProtocol? {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return nil }
+         var shouldReconnect = false
+         var circuitOpen = false
+         connectionLock.lock()
+@@ -877,4 +878,4 @@ class BatteryManager {
+         cachedChargeControlMode = mode
+         return mode
+     }
+-}
+\ No newline at end of file
++}
 diff --git a/Sapphire/Utilities/UserWindowSupport.swift b/Sapphire/Utilities/UserWindowSupport.swift
 index c865b40..a857af3 100755
 --- a/Sapphire/Utilities/UserWindowSupport.swift
@@ -187,6 +286,38 @@ index c865b40..a857af3 100755
 @@ -327,4 +332,4 @@ final class FocusableHostingView<Content: View>: NSHostingView<Content> {
          guard let selector else { return false }
          return NSApp.sendAction(selector, to: nil, from: self)
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Sapphire/Widgets/Battery/BatteryDetailView.swift b/Sapphire/Widgets/Battery/BatteryDetailView.swift
+index 1506ed8..662f44b 100644
+--- a/Sapphire/Widgets/Battery/BatteryDetailView.swift
++++ b/Sapphire/Widgets/Battery/BatteryDetailView.swift
+@@ -105,7 +105,11 @@ struct BatteryDetailView: View {
+     private var statusAndBar: some View {
+         VStack(alignment: .leading, spacing: 8) {
+             HStack {
+-                if let msg = chargeLimitMessage {
++                if !CommunityHelperPolicy.allowsPrivilegedHelper {
++                    Text("Charge controls unavailable".local)
++                        .font(.system(size: 11, weight: .medium, design: .rounded))
++                        .foregroundColor(.white.opacity(0.65))
++                } else if let msg = chargeLimitMessage {
+                     Text(msg)
+                         .font(.system(size: 11, weight: .medium, design: .rounded))
+                         .foregroundColor(levelColor)
+@@ -172,6 +176,7 @@ struct BatteryDetailView: View {
+                         dragLimit = nil
+                     }
+             )
++            .allowsHitTesting(CommunityHelperPolicy.allowsPrivilegedHelper)
+             .help("Drag to set the charge limit — charging pauses at this level to help preserve battery health.")
+         }
+         .frame(height: 24)
+@@ -306,4 +311,4 @@ struct BatteryDetailView: View {
+         .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+         .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous).strokeBorder(Color.white.opacity(0.10), lineWidth: 1))
      }
 -}
 \ No newline at end of file
