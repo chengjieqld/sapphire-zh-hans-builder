@@ -1,0 +1,63 @@
+diff --git a/Sapphire/App/CommunityOTPPolicy.swift b/Sapphire/App/CommunityOTPPolicy.swift
+new file mode 100644
+--- /dev/null
++++ b/Sapphire/App/CommunityOTPPolicy.swift
+@@ -0,0 +1,5 @@
++// Community builds do not offer verification-code detection or popovers.
++// Ordinary notification display remains available.
++enum CommunityOTPPolicy {
++    static let isEnabled = false
++}
+diff --git a/Sapphire/Stubs/VerificationCodeDetector.swift b/Sapphire/Stubs/VerificationCodeDetector.swift
+--- a/Sapphire/Stubs/VerificationCodeDetector.swift
++++ b/Sapphire/Stubs/VerificationCodeDetector.swift
+@@ -9,6 +9,7 @@ import Foundation
+ 
+ enum VerificationCodeDetector {
+     static func find(in text: String) -> String? {
++        guard CommunityOTPPolicy.isEnabled else { return nil }
+         let range = NSRange(text.startIndex..., in: text)
+         guard let regex = try? NSRegularExpression(pattern: #"\b\d{4,8}\b"#),
+               let match = regex.firstMatch(in: text, range: range),
+diff --git a/Sapphire/LiveActivities/LiveActivityManager.swift b/Sapphire/LiveActivities/LiveActivityManager.swift
+--- a/Sapphire/LiveActivities/LiveActivityManager.swift
++++ b/Sapphire/LiveActivities/LiveActivityManager.swift
+@@ -2014,6 +2014,7 @@ class LiveActivityManager: ObservableObject {
+     }
+ 
+     private func checkForOTP() -> (ActivityType, LiveActivityContent, TimeInterval?)? {
++        guard CommunityOTPPolicy.isEnabled else { return nil }
+         guard settingsModel.settings.otpLiveActivityEnabled else { return nil }
+ 
+         if let event = SmartInboxMonitor.shared.latestOTP {
+diff --git a/Sapphire/Services/Miscellaneous/NotificationManager.swift b/Sapphire/Services/Miscellaneous/NotificationManager.swift
+--- a/Sapphire/Services/Miscellaneous/NotificationManager.swift
++++ b/Sapphire/Services/Miscellaneous/NotificationManager.swift
+@@ -347,7 +347,7 @@ class NotificationManager: ObservableObject {
+             }
+         }
+         if !isInitiallyAllowed { return false }
+-        if settings.onlyShowVerificationCodeNotifications { return payload.verificationCode != nil }
++        if CommunityOTPPolicy.isEnabled && settings.onlyShowVerificationCodeNotifications { return payload.verificationCode != nil }
+         return true
+     }
+     private func parseNotification(from rawPlist: Data, id: Int64, dateValue: Double) -> NotificationPayload? {
+diff --git a/Sapphire/App Settings/SettingsPanes.swift b/Sapphire/App Settings/SettingsPanes.swift
+--- a/Sapphire/App Settings/SettingsPanes.swift
++++ b/Sapphire/App Settings/SettingsPanes.swift
+@@ -5019,6 +5019,7 @@ struct NotificationsSettingsView: View {
+ 
+                 VStack(spacing: 20) {
+ 
++                    if CommunityOTPPolicy.isEnabled {
+                     VStack(alignment: .leading, spacing: 0) {
+                         Text("Verification Codes")
+                             .font(.headline)
+@@ -5066,6 +5067,7 @@ struct NotificationsSettingsView: View {
+                     .disabled(!settings.settings.masterNotificationsEnabled)
+                     .opacity(settings.settings.masterNotificationsEnabled ? 1.0 : 0.5)
+                     .animation(.easeInOut, value: settings.settings.masterNotificationsEnabled)
++                    }
+ 
+                     VStack(alignment: .leading, spacing: 0) {
+                         Text("Smart Inbox")
