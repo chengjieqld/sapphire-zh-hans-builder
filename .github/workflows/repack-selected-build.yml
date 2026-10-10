@@ -1,0 +1,58 @@
+name: Repack selected Sapphire build for Drive
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: Successful Sapphire build workflow run ID
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  repack:
+    runs-on: macos-26
+    timeout-minutes: 30
+    env:
+      BUILD_RUN_ID: ${{ inputs.build_run_id }}
+    steps:
+      - name: Download selected build
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$BUILD_RUN_ID" =~ ^[0-9]+$ ]]
+          gh run download "$BUILD_RUN_ID" \
+            --repo chengjieqld/sapphire-zh-hans-builder \
+            --name Sapphire-zh-Hans-arm64 \
+            --dir "$RUNNER_TEMP/original"
+          test -f "$RUNNER_TEMP/original/Sapphire-zh-Hans-arm64.zip"
+
+      - name: Repack app and verify signature
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/app" "$RUNNER_TEMP/roundtrip" dist
+          unzip -q "$RUNNER_TEMP/original/Sapphire-zh-Hans-arm64.zip" -d "$RUNNER_TEMP/app"
+          codesign --verify --deep --strict "$RUNNER_TEMP/app/Sapphire.app"
+          tar -C "$RUNNER_TEMP/app" -cf - Sapphire.app \
+            | xz -9e -T4 > "dist/Sapphire-zh-Hans-arm64-build-${BUILD_RUN_ID}.tar.xz"
+          tar -xJf "dist/Sapphire-zh-Hans-arm64-build-${BUILD_RUN_ID}.tar.xz" -C "$RUNNER_TEMP/roundtrip"
+          codesign --verify --deep --strict "$RUNNER_TEMP/roundtrip/Sapphire.app"
+          size=$(stat -f %z "dist/Sapphire-zh-Hans-arm64-build-${BUILD_RUN_ID}.tar.xz")
+          echo "Repacked archive size: $size bytes"
+          test "$size" -lt 104857600
+          shasum -a 256 "dist/Sapphire-zh-Hans-arm64-build-${BUILD_RUN_ID}.tar.xz" > dist/SHA256SUMS.txt
+
+      - name: Upload compact archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Sapphire-zh-Hans-arm64-compact
+          path: dist/
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
