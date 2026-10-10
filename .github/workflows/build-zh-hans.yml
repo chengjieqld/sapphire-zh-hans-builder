@@ -52,6 +52,20 @@ jobs:
           "$RUNNER_TEMP/community-helper-policy-test" "$PWD/source"
           git -C source diff --check
 
+      - name: Disable verification-code features in community build
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C source apply --check ../patches/community-otp-disabled.patch
+          git -C source apply ../patches/community-otp-disabled.patch
+          swiftc -parse-as-library \
+            source/Sapphire/App/CommunityOTPPolicy.swift \
+            source/Sapphire/Stubs/VerificationCodeDetector.swift \
+            scripts/CommunityOTPTests.swift \
+            -o "$RUNNER_TEMP/community-otp-test"
+          "$RUNNER_TEMP/community-otp-test" "$PWD/source"
+          git -C source diff --check
+
       - name: Restore reviewed Gemini logging behavior
         shell: bash
         run: |
