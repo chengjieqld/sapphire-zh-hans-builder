@@ -39,6 +39,19 @@ jobs:
           "$RUNNER_TEMP/firebase-policy-test" source/Sapphire/Stubs/GoogleService-Info.plist
           git -C source diff --check
 
+      - name: Keep the ad-hoc community build independent of the privileged helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C source apply --check ../patches/community-helper-policy.patch
+          git -C source apply ../patches/community-helper-policy.patch
+          swiftc -parse-as-library \
+            source/Sapphire/App/CommunityHelperPolicy.swift \
+            scripts/CommunityHelperPolicyTests.swift \
+            -o "$RUNNER_TEMP/community-helper-policy-test"
+          "$RUNNER_TEMP/community-helper-policy-test" "$PWD/source"
+          git -C source diff --check
+
       - name: Restore reviewed Gemini logging behavior
         shell: bash
         run: |
@@ -178,6 +191,10 @@ jobs:
           set -euo pipefail
           app="$RUNNER_TEMP/SapphireDerivedData/Build/Products/Release/Sapphire.app"
           test -d "$app"
+          test -f "$app/Contents/Library/LaunchDaemons/com.shariq.sapphireHelper.plist"
+          test -f "$app/Contents/MacOS/com.shariq.sapphireHelper"
+          rm "$app/Contents/Library/LaunchDaemons/com.shariq.sapphireHelper.plist" "$app/Contents/MacOS/com.shariq.sapphireHelper"
+          bash scripts/verify-no-privileged-helper.sh "$app"
           codesign --force --deep --sign - --timestamp=none "$app"
           codesign --verify --deep --strict --verbose=2 "$app"
           test "$(defaults read "$app/Contents/Info.plist" CFBundleExecutable)" = 'Sapphire'
