@@ -1,0 +1,193 @@
+diff --git a/Sapphire/App/CommunityHelperPolicy.swift b/Sapphire/App/CommunityHelperPolicy.swift
+new file mode 100644
+--- /dev/null
++++ b/Sapphire/App/CommunityHelperPolicy.swift
+@@ -0,0 +1,6 @@
++// The community package is ad-hoc signed and cannot safely claim the
++// original developer's privileged helper registration. This file is
++// supplied only by the community build patch, not upstream Sapphire.
++enum CommunityHelperPolicy {
++    static let allowsPrivilegedHelper = false
++}
+diff --git a/Sapphire/App/HelperManager.swift b/Sapphire/App/HelperManager.swift
+index da3bb43..c0ed499 100755
+--- a/Sapphire/App/HelperManager.swift
++++ b/Sapphire/App/HelperManager.swift
+@@ -92,6 +92,11 @@ struct HelperStatusBanner: View {
+     @ObservedObject var helperManager: HelperManager
+ 
+     var body: some View {
++        if !CommunityHelperPolicy.allowsPrivilegedHelper {
++            Text("Privileged helper is unavailable in this ad-hoc build; battery controls and related integrations are disabled.".local)
++                .font(.caption)
++                .foregroundColor(.secondary)
++        } else {
+         HStack(alignment: .top, spacing: 15) {
+             Image(systemName: helperManager.bannerSymbol)
+                 .font(.title2)
+@@ -163,6 +168,7 @@ struct HelperStatusBanner: View {
+                 }
+             }
+         }
++        }
+     }
+ }
+ 
+@@ -374,15 +380,18 @@ class HelperManager: ObservableObject {
+     }
+ 
+     func reactivateHelper() {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return }
+         Task { await registerHelper(userInitiated: true, forceReinstall: true) }
+     }
+ 
+     func resetOwnBackgroundActivity() {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return }
+         guard !isResettingHelper else { return }
+         Task { await performOwnBackgroundActivityReset() }
+     }
+ 
+     func beginInstallation() {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return }
+         Task { @MainActor [weak self] in
+             guard let self else { return }
+             let currentStatus = await self.refreshStatus()
+@@ -392,6 +401,7 @@ class HelperManager: ObservableObject {
+     }
+ 
+     func installIfNeeded() {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return }
+         Task { @MainActor [weak self] in
+             guard let self else { return }
+             let currentStatus = await self.refreshStatus()
+@@ -486,6 +496,7 @@ class HelperManager: ObservableObject {
+ 
+     @discardableResult
+     private func registerHelper(userInitiated: Bool, forceReinstall: Bool) async -> Bool {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return false }
+         if isRegistering { return false }
+         if let last = lastRegisterAttempt, Date().timeIntervalSince(last) < registerCooldown, !userInitiated, !forceReinstall {
+             return false
+@@ -603,6 +614,10 @@ class HelperManager: ObservableObject {
+     }
+ 
+     private func refreshIssue() {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else {
++            lastIssue = nil
++            return
++        }
+         if isRunning {
+             lastIssue = nil
+             return
+@@ -622,6 +637,7 @@ class HelperManager: ObservableObject {
+     }
+ 
+     private func presentIssue(_ issue: HelperIssue, force: Bool) {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return }
+         if !force, presentedIssuesThisSession.contains(issue.code) { return }
+         presentedIssuesThisSession.insert(issue.code)
+         HelperAlertPresenter.present(issue)
+@@ -638,4 +654,4 @@ extension SMAppService.Status: CustomStringConvertible {
+         @unknown default: return "Unknown".local
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Sapphire/App/OnboardingView.swift b/Sapphire/App/OnboardingView.swift
+index 6704518..9a47b91 100755
+--- a/Sapphire/App/OnboardingView.swift
++++ b/Sapphire/App/OnboardingView.swift
+@@ -45,7 +45,9 @@ struct OnboardingView: View {
+                     case .welcome:
+                         WelcomeStepView(onGetStarted: { currentStep = .permissions })
+                     case .permissions:
+-                        PermissionsStepView(onContinue: { currentStep = .helperInstallation })
++                        PermissionsStepView(onContinue: {
++                            currentStep = CommunityHelperPolicy.allowsPrivilegedHelper ? .helperInstallation : .privacyPolicy
++                        })
+                     case .helperInstallation:
+                         HelperInstallationStepView(onContinue: { currentStep = .privacyPolicy })
+                     case .privacyPolicy:
+@@ -55,12 +57,14 @@ struct OnboardingView: View {
+                             if settings.settings.defaultMusicPlayer == .spotify {
+                                 currentStep = .spotifySetup
+                             } else {
+-                                currentStep = .batterySetup
++                                currentStep = CommunityHelperPolicy.allowsPrivilegedHelper ? .batterySetup : .corePreferences
+                             }
+                         })
+                     case .spotifySetup:
+                         SpotifySetupStepView(
+-                            onNext: { currentStep = .batterySetup },
++                            onNext: {
++                                currentStep = CommunityHelperPolicy.allowsPrivilegedHelper ? .batterySetup : .corePreferences
++                            },
+                             isLoading: $isPrivateApiLoading,
+                             error: $privateApiError
+                         )
+@@ -1008,4 +1012,4 @@ private struct CustomWindowControls: View {
+             withAnimation(.easeInOut(duration: 0.1)) { isHovering = hovering }
+         }
+     }
+-}
+\ No newline at end of file
++}
+diff --git a/Sapphire/Localizable.xcstrings b/Sapphire/Localizable.xcstrings
+index ae00af4..b393f5d 100644
+--- a/Sapphire/Localizable.xcstrings
++++ b/Sapphire/Localizable.xcstrings
+@@ -40988,6 +40988,23 @@
+         }
+       }
+     },
++    "Privileged helper is unavailable in this ad-hoc build; battery controls and related integrations are disabled.": {
++      "extractionState": "manual",
++      "localizations": {
++        "en": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "Privileged helper is unavailable in this ad-hoc build; battery controls and related integrations are disabled."
++          }
++        },
++        "zh-Hans": {
++          "stringUnit": {
++            "state": "translated",
++            "value": "此临时签名版本无法使用特权辅助程序；电池控制及相关系统集成功能已停用。"
++          }
++        }
++      }
++    },
+     "Privileged helper is running.": {
+       "extractionState": "manual",
+       "localizations": {
+diff --git a/Sapphire/Utilities/UserWindowSupport.swift b/Sapphire/Utilities/UserWindowSupport.swift
+index c865b40..a857af3 100755
+--- a/Sapphire/Utilities/UserWindowSupport.swift
++++ b/Sapphire/Utilities/UserWindowSupport.swift
+@@ -172,6 +172,10 @@ enum HelperAlertPresenter {
+     private static var activeModalCount = 0
+ 
+     static func showHelperConnectionLost(onDismiss: (() -> Void)? = nil) {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else {
++            onDismiss?()
++            return
++        }
+         presentModal(
+             messageText: "Sapphire Helper Needs Attention",
+             informativeText: """
+@@ -190,6 +194,7 @@ enum HelperAlertPresenter {
+     }
+ 
+     static func present(_ issue: HelperIssue) {
++        guard CommunityHelperPolicy.allowsPrivilegedHelper else { return }
+         let buttons: [String]
+         switch issue {
+         case .notFound:
+@@ -327,4 +332,4 @@ final class FocusableHostingView<Content: View>: NSHostingView<Content> {
+         guard let selector else { return false }
+         return NSApp.sendAction(selector, to: nil, from: self)
+     }
+-}
+\ No newline at end of file
++}
